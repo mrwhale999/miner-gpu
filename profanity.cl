@@ -896,3 +896,8 @@ __kernel void profanity_score_magicxor(__global mp_number * const pInverse, __gl
 
     profanity_result_update(id, hash, pResult, score, scoreMax);
 }
+
+__kernel void profanity_init(__global uint *output) {
+    int gid = get_global_id(0);
+    output[gid] = gid; // Placeholder logic
+}
