@@ -1,19 +1,5 @@
 #include "profanity.cpp"
 
-// runMagicXor() – a function that directly takes all necessary inputs and, after running the custom “magicxor” kernel (and all other necessary
-// steps based on the logic in profanity.cpp::main()), returns the magicxor result string (which Dispatcher::getMagicXorFound() already provides).
-//
-// Parameters:
-//   publicKey         : The seed public key (a 128-character hexadecimal string)
-//   magicxorDifficulty: A string representing the difficulty parameter for the custom magicxor mode
-//   mineContract      : (Optional) if true, use the CONTRACT target; otherwise, use ADDRESS (default: false)
-//   worksizeLocal     : (Optional) OpenCL local work size (default: 64)
-//   worksizeMax       : (Optional) OpenCL global work size limit; if 0 it is automatically determined (default: 0)
-//   inverseSize       : (Optional) Number of modular inversions to compute per work item (default: 255)
-//   inverseMultiple   : (Optional) Number of work items in parallel (default: 16384)
-//   noCache           : (Optional) disable binary caching (default: false)
-//   deviceSkipIndices : (Optional) indices of devices to skip (default: empty vector)
-// TODO: update to skip some text output
 std::string runMagicXor(
     const std::string & strPublicKey,
     const std::string & strMagicXorDifficulty,
@@ -34,14 +20,14 @@ std::string runMagicXor(
 
 		if (strPublicKey.length() == 0) {
             if (verboseStdOut) {
-                std::cout << "error: this tool requires your public key to derive it's private key security" << std::endl;
+                std::cout << "error: this tool requires your public key to derive its private key security" << std::endl;
             }
 			return retFailStatus;
 		}
 
 		if (strPublicKey.length() != 128) {
             if (verboseStdOut) {
-			    std::cout << "error: public key must be 128 hexademical characters long" << std::endl;
+			    std::cout << "error: public key must be 128 hexadecimal characters long" << std::endl;
             }
 			return retFailStatus;
 		}
@@ -58,21 +44,19 @@ std::string runMagicXor(
         if (verboseStdOut) {
 		    std::cout << "Devices:" << std::endl;
         }
+
 		for (size_t i = 0; i < vFoundDevices.size(); ++i) {
-			// Ignore devices in skip index
 			if (std::find(vDeviceSkipIndex.begin(), vDeviceSkipIndex.end(), i) != vDeviceSkipIndex.end()) {
 				continue;
 			}
 
 			cl_device_id & deviceId = vFoundDevices[i];
-
 			const auto strName = clGetWrapperString(clGetDeviceInfo, deviceId, CL_DEVICE_NAME);
 			const auto computeUnits = clGetWrapper<cl_uint>(clGetDeviceInfo, deviceId, CL_DEVICE_MAX_COMPUTE_UNITS);
 			const auto globalMemSize = clGetWrapper<cl_ulong>(clGetDeviceInfo, deviceId, CL_DEVICE_GLOBAL_MEM_SIZE);
 			bool precompiled = false;
 
-			// Check if there's a prebuilt binary for this device and load it
-			if(!bNoCache) {
+			if (!bNoCache) {
 				std::ifstream fileIn(getDeviceCacheFilename(deviceId, inverseSize), std::ios::binary);
 				if (fileIn.is_open()) {
 					vDeviceBinary.push_back(std::string((std::istreambuf_iterator<char>(fileIn)), std::istreambuf_iterator<char>()));
@@ -80,9 +64,11 @@ std::string runMagicXor(
 					precompiled = true;
 				}
 			}
+
             if (verboseStdOut) {
 			    std::cout << "  GPU" << i << ": " << strName << ", " << globalMemSize << " bytes available, " << computeUnits << " compute units (precompiled = " << (precompiled ? "yes" : "no") << ")" << std::endl;
             }
+
 			vDevices.push_back(vFoundDevices[i]);
 			mDeviceIndex[vFoundDevices[i]] = i;
 		}
@@ -92,60 +78,69 @@ std::string runMagicXor(
 		}
 
         if (verboseStdOut) {
-            std::cout << std::endl;
-            std::cout << "Initializing OpenCL..." << std::endl;
+            std::cout << std::endl << "Initializing OpenCL..." << std::endl;
             std::cout << "  Creating context..." << std::flush;
         }
-		auto clContext = clCreateContext( NULL, vDevices.size(), vDevices.data(), NULL, NULL, &errorCode);
+
+		auto clContext = clCreateContext(NULL, vDevices.size(), vDevices.data(), NULL, NULL, &errorCode);
 		if (printResult(clContext, errorCode, verboseStdOut)) {
 			return retFailStatus;
 		}
 
 		cl_program clProgram;
 		if (vDeviceBinary.size() == vDevices.size()) {
-			// Create program from binaries
 			bUsedCache = true;
 
             if (verboseStdOut) {
 			    std::cout << "  Loading kernel from binary..." << std::flush;
             }
-			const unsigned char * * pKernels = new const unsigned char *[vDevices.size()];
+
+			const unsigned char** pKernels = new const unsigned char*[vDevices.size()];
 			for (size_t i = 0; i < vDeviceBinary.size(); ++i) {
-				pKernels[i] = reinterpret_cast<const unsigned char *>(vDeviceBinary[i].data());
+				pKernels[i] = reinterpret_cast<const unsigned char*>(vDeviceBinary[i].data());
 			}
 
-			cl_int * pStatus = new cl_int[vDevices.size()];
-
+			cl_int* pStatus = new cl_int[vDevices.size()];
 			clProgram = clCreateProgramWithBinary(clContext, vDevices.size(), vDevices.data(), vDeviceBinarySize.data(), pKernels, pStatus, &errorCode);
-			if(printResult(clProgram, errorCode, verboseStdOut)) {
+			if (printResult(clProgram, errorCode, verboseStdOut)) {
 				return retFailStatus;
 			}
 		} else {
-			// Create a program from the kernel source
             if (verboseStdOut) {
 			    std::cout << "  Compiling kernel..." << std::flush;
             }
+
 			const std::string strKeccak = readFile("keccak.cl");
 			const std::string strVanity = readFile("profanity.cl");
-			const char * szKernels[] = { strKeccak.c_str(), strVanity.c_str() };
+			const char* szKernels[] = { strKeccak.c_str(), strVanity.c_str() };
 
-			clProgram = clCreateProgramWithSource(clContext, sizeof(szKernels) / sizeof(char *), szKernels, NULL, &errorCode);
+			clProgram = clCreateProgramWithSource(clContext, sizeof(szKernels) / sizeof(char*), szKernels, NULL, &errorCode);
 			if (printResult(clProgram, errorCode, verboseStdOut)) {
 				return retFailStatus;
 			}
 		}
 
-		// Build the program
         if (verboseStdOut) {
 		    std::cout << "  Building program..." << std::flush;
         }
+
 		const std::string strBuildOptions = "-D PROFANITY_INVERSE_SIZE=" + toString(inverseSize) + " -D PROFANITY_MAX_SCORE=" + toString(PROFANITY_MAX_SCORE);
-		if (printResult(clBuildProgram(clProgram, vDevices.size(), vDevices.data(), strBuildOptions.c_str(), NULL, NULL), verboseStdOut)) {
+		cl_int buildResult = clBuildProgram(clProgram, vDevices.size(), vDevices.data(), strBuildOptions.c_str(), NULL, NULL);
+		if (printResult(buildResult, verboseStdOut)) {
+			for (size_t i = 0; i < vDevices.size(); ++i) {
+				size_t logSize;
+				clGetProgramBuildInfo(clProgram, vDevices[i], CL_PROGRAM_BUILD_LOG, 0, NULL, &logSize);
+
+				std::vector<char> log(logSize + 1);
+				clGetProgramBuildInfo(clProgram, vDevices[i], CL_PROGRAM_BUILD_LOG, logSize, log.data(), NULL);
+				log[logSize] = '\0';
+
+				std::cerr << "BUILD LOG for GPU" << mDeviceIndex[vDevices[i]] << ":\n" << log.data() << std::endl;
+			}
 			return retFailStatus;
 		}
 
-		// Save binary to improve future start times
-		if( !bUsedCache && !bNoCache ) {
+		if (!bUsedCache && !bNoCache) {
             if (verboseStdOut) {
 			    std::cout << "  Saving program..." << std::flush;
             }
@@ -163,7 +158,7 @@ std::string runMagicXor(
         }
 
 		Dispatcher d(clContext, clProgram, mode, worksizeMax == 0 ? inverseSize * inverseMultiple : worksizeMax, inverseSize, inverseMultiple, 0, strPublicKey);
-		for (auto & i : vDevices) {
+		for (auto& i : vDevices) {
 			d.addDevice(i, worksizeLocal, mDeviceIndex[i]);
 		}
         d.verboseStdOut = verboseStdOut;
@@ -173,16 +168,15 @@ std::string runMagicXor(
         std::string m_magicxorFound = d.getMagicxorFound();
 		return m_magicxorFound;
 
-	} catch (std::runtime_error & e) {
+	} catch (std::runtime_error& e) {
         if (verboseStdOut) {
 		    std::cout << "std::runtime_error - " << e.what() << std::endl;
         }
 	} catch (...) {
         if (verboseStdOut) {
-		    std::cout << "unknown exception occured" << std::endl;
+		    std::cout << "unknown exception occurred" << std::endl;
         }
 	}
 
 	return retFailStatus;
 }
-
